@@ -77,6 +77,6 @@ conn = sqlite3.connect('./kolDB.db')
 
 c = conn.cursor()
 
-cb_search = scholarly.search_keyword("cerebellum")
+cb_search = scholarly.search_keyword("air quality")
 
 generator_db(cb_search)
