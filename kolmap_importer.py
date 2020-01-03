@@ -29,7 +29,7 @@ def var_extract(auth):
     # Assigning the co-authors listed by the user on Google Scholar
 #     coauth_manual = [auth.coauthors[i].name for i in range(len(auth.coauthors))]
 
-    cl = [coauthor_extract(auth, i) for i in range(5)] #len(auth.publications))]
+    cl = [coauthor_extract(auth, i) for i in range(len(auth.publications))]
     cl_flat = list(itertools.chain.from_iterable(cl)) # Flattening list of lists
 
     # Constructing the dataframe
@@ -62,7 +62,7 @@ def generator_db(gen):
     conn = sqlite3.connect('./kolDB.db')
 #     c = conn.cursor()
 
-    for i in list(range(6)):
+    for i in gen:
         el = var_extract(next(gen).fill())
         # Append the current dataframe to the database
         el.to_sql('edgelist', con = conn, index=False, if_exists='append')
