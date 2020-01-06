@@ -5,6 +5,9 @@ import sqlite3
 import itertools
 
 def var_extract(auth):
+    '''
+    Take a Scholarly author object and extracts informatino about the author and their publications.
+    '''
 
     # Collecting simple variables
     record_name = auth.name
@@ -22,31 +25,90 @@ def var_extract(auth):
 
     # Assembling SQL command to write data to the "metrics" database
     sql_s = "INSERT INTO metrics VALUES(\"" + str(record_id) + "\" , \"" + str(record_name) + "\" , " + str(cited)  + "," + str(cited5y) + "," + str(h_index) + "," + str(h_index5y) + "," + str(i10index) + "," + str(i10index5y) + ")"
-    print(f"Importing data for author {record_name} into database\n")
+#     print(sql_s)
     c.execute(sql_s)
     conn.commit()
 
     # Assigning the co-authors listed by the user on Google Scholar
 #     coauth_manual = [auth.coauthors[i].name for i in range(len(auth.coauthors))]
 
-    cl = [coauthor_extract(auth, i) for i in range(len(auth.publications))]
-    cl_flat = list(itertools.chain.from_iterable(cl)) # Flattening list of lists
+    # Extracts relevant information from each publication in an author's record
+    cl = [pub_extract(auth, i) for i in range(3)] #len(auth.publications))]
 
-    # Constructing the dataframe
-    nodeEL = pd.DataFrame({"coauthor": cl_flat})
-    nodeEL["author"] = record_name
-    nodeEL["id"] = record_id
+    # Unpack data from publication extraction into dataframe and upload to database
+    [pub_unpacker(l, record_name) for l in cl]
 
-    # Clean up the dataframe
-    # Removing connection to self (coauthor = author)
-    nodeEL = nodeEL.loc[nodeEL.coauthor != nodeEL.author]
-    # Removing duplicate connections/edges for each author
+#     return pd.concat(testOut)
 
-    return nodeEL
+def pub_unpacker(d, name):
 
-def coauthor_extract(auth, i):
+    coauths, pub_title, pub_url, pub_journal = d
+
+#     cl_flat = list(itertools.chain.from_iterable(coauths)) # Flattening list of lists
+
+    coauths.append(name)
+
+    if len(coauths) >2:
+
+        pubEL = edgelister(coauths)
+
+    #     list1 = [[a] * len(coauths) for a in coauths]
+    #     list1a = list(itertools.chain.from_iterable(list1))
+
+    #     list2 = [coauths] * len(coauths)
+    #     list2a = list(itertools.chain.from_iterable(list2))
+
+    #     pubEL = pd.DataFrame({"author1": list1a, "author2": list2a})
+        pubEL["title"] = pub_title
+        pubEL["url"] = pub_url
+        pubEL["journal"] = pub_journal
+
+            # Clean up the dataframe
+        # Removing connection to self (coauthor = author)
+    #     pubEL = pubEL.loc[pubEL.author1 != pubEL.author2]
+
+        # Removing duplicate connections/edges for each author
+        pubEL.drop_duplicates(inplace=True)
+
+        # Enter the dataframe into a database
+        pubEL.to_sql('edgelist', con = conn, index=False, if_exists='append')
+
+    #     return pubEL
+
+    else:
+        print("No coauthors found")
+
+def edgelister(simple_list):
+
+    listSet1 = []
+    for i in range(len(simple_list)-1):
+        test = [simple_list[i]] * (len(simple_list) -1 -i)
+        listSet1.append(test)
+
+    listSet2 = []
+    for i in range(1, len(simple_list)):
+#         print(simple_list[i:])
+        test2 = simple_list[i:]
+        listSet2.append(test2)
+
+    listSet1_expanded = list(itertools.chain.from_iterable(listSet1))
+    listSet2_expanded = list(itertools.chain.from_iterable(listSet2))
+
+    el_df = pd.DataFrame({'author1': listSet1_expanded, 'author2': listSet2_expanded})
+
+    return el_df
+
+def pub_extract(auth, i):
+
+    '''
+    Expands the publications field of the scholarly author object and extracts the coauthor names and manuscript
+    title from each publication. Returns a tuple of coauthor (list), pub title (string), pub url (string) and the
+    journal name (string).
+    '''
+
     try:
-        coauths = auth.publications[i].fill().bib["author"].split(" and ") # Make list from coauthor string
+        pubStub = auth.publications[i].fill()
+        coauths = pubStub.bib["author"].split(" and ") # Make list from coauthor string
         coauths = [ca.strip() for ca in coauths] # Remove leading and trailing whitespace
 
         print("Authors for publication " + str(i))
@@ -54,20 +116,32 @@ def coauthor_extract(auth, i):
         [print(ca) for ca in coauths] # Print the list of names extracted
         print("\n")
 
-        return coauths
+        pub_title = pubStub.bib["title"]
+        pub_url = pubStub.bib["url"]
+        pub_journal = pubStub.bib["journal"]
+
+        return (coauths, pub_title, pub_url, pub_journal)
     except:
-        return("")
+        return([], "", "", "")
 
 def generator_db(gen):
+
+    '''
+    Opens up a connection to a sqlite database, iterates through the scholarly generator and extracts the information
+    for each author.
+    '''
+
     conn = sqlite3.connect('./kolDB.db')
 #     c = conn.cursor()
 
-    for i in gen:
-        el = var_extract(next(gen).fill())
-        # Append the current dataframe to the database
-        el.to_sql('edgelist', con = conn, index=False, if_exists='append')
 
-    conn.commit()
+    for i in gen:
+        var_extract(i.fill())
+
+    for i in list(range(6)):
+        var_extract(next(gen).fill())
+
+    conn.commit() # Commits the SQL queries specified by functions to the sqlite datebase.
     conn.close()
 
 #################################################################
@@ -77,6 +151,6 @@ conn = sqlite3.connect('./kolDB.db')
 
 c = conn.cursor()
 
-cb_search = scholarly.search_keyword("air quality")
+cb_search = scholarly.search_keyword("air_quality")
 
 generator_db(cb_search)
