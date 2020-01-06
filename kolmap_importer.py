@@ -73,6 +73,8 @@ def pub_unpacker(d, name):
         # Enter the dataframe into a database
         pubEL.to_sql('edgelist', con = conn, index=False, if_exists='append')
 
+        conn.commit()
+
     #     return pubEL
 
     else:
@@ -141,7 +143,7 @@ def generator_db(gen):
     for i in list(range(6)):
         var_extract(next(gen).fill())
 
-    conn.commit() # Commits the SQL queries specified by functions to the sqlite datebase.
+    # conn.commit() # Commits the SQL queries specified by functions to the sqlite datebase.
     conn.close()
 
 #################################################################
