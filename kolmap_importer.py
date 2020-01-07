@@ -4,6 +4,8 @@ import scholarly
 import sqlite3
 import itertools
 
+keysearch = input("Enter keyword for network map: ")
+
 def var_extract(auth):
     '''
     Take a Scholarly author object and extracts informatino about the author and their publications.
@@ -150,6 +152,6 @@ conn = sqlite3.connect('./kolDB.db')
 
 c = conn.cursor()
 
-cb_search = scholarly.search_keyword("air_quality")
+cb_search = scholarly.search_keyword(keysearch) #("air_quality")
 
 generator_db(cb_search)
