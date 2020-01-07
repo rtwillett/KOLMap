@@ -33,7 +33,7 @@ def var_extract(auth):
 #     coauth_manual = [auth.coauthors[i].name for i in range(len(auth.coauthors))]
 
     # Extracts relevant information from each publication in an author's record
-    cl = [pub_extract(auth, i) for i in range(3)] #len(auth.publications))]
+    cl = [pub_extract(auth, i) for i in range(len(auth.publications))]
 
     # Unpack data from publication extraction into dataframe and upload to database
     [pub_unpacker(l, record_name) for l in cl]
@@ -139,9 +139,6 @@ def generator_db(gen):
 
     for i in gen:
         var_extract(i.fill())
-
-    for i in list(range(6)):
-        var_extract(next(gen).fill())
 
     # conn.commit() # Commits the SQL queries specified by functions to the sqlite datebase.
     conn.close()
