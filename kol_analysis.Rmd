@@ -1,0 +1,202 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: "Ryan Willett"
+---
+
+```{r, echo=FALSE, warning=F}
+library(tidyverse)
+library(ggplot2)
+library(igraph)
+library(sigmaNet)
+library(scales)
+
+library(RSQLite)
+library(DBI)
+
+
+setwd("~/CRA/KOLMap")
+
+
+```
+
+```{r}
+con <- dbConnect(RSQLite::SQLite(), "kolDB.db")
+
+dbListTables(con)
+```
+
+```{r}
+metricsDF <- dbGetQuery(con, "SELECT * FROM metrics;")
+el_df <- dbGetQuery(con, "SELECT author1,author2 FROM  edgelist;")
+```
+
+```{r}
+authors_graph <- graph_from_data_frame(el_df, directed=F)
+```
+
+```{r}
+V(authors_graph)$degree <- degree(authors_graph)
+```
+
+```{r}
+degree(authors_graph) %>% sort(decreasing = T) %>% head(20)
+```
+
+
+
+
+```{r}
+fr <- layout_with_fr(authors_graph)
+```
+
+```{r}
+sig <- sigmaFromIgraph(authors_graph, layout = fr) %>%
+  addNodeSize(sizeMetric = 'degree', maxSize = 8) %>%
+  #addNodeLabels(labelAttr = 'label') %>%
+  addNodeColors(colorAttr = 'degree') # %>% addEdgeSize(sizeAttr = 'width', minSize = 0.1, maxSize = 2.5)
+sig
+```
+
+```{r}
+degDF <- data.frame(name = V(authors_graph)$name, degree = V(authors_graph)$degree)
+
+ggplot(degDF, aes(degree)) + geom_histogram(binwidth = 19) + 
+  labs(x="Degree Frequency", y="Number of Coauthors", title="Degree Distribution of Coauthorship in the Air Quality Field") + 
+  theme_classic()
+
+
+ggplot(degDF, aes(degree)) + geom_freqpoly(binwidth = 19, fill="black") + xlim(0,500) + 
+  labs(x="Degree Frequency", y="Number of Coauthors", title="Degree Distribution of Coauthorship in the Air Quality Field") + 
+  theme_classic()
+```
+
+
+```{r}
+E(authors_graph)$betweenness <-
+  estimate_edge_betweenness(authors_graph, e = E(authors_graph), directed = F, cutoff = 5) %>% rescale(to =
+                                                                                         c(0.1, 2.5))
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+authors_graph_trim <- delete_vertices(authors_graph, V(authors_graph)[degree<500])
+```
+
+```{r}
+E(authors_graph_trim)$betweenness <- estimate_betweenness(authors_graph_trim, e = E(authors_graph_trim), directed = F) %>% rescale(to = c(0.1, 2.5))
+```
+
+```{r}
+fr_sub <- layout_with_fr(authors_graph_trim)
+kk_sub <- layout_with_kk(authors_graph_trim)
+```
+
+```{r}
+authors_graph_trim2 <- simplify(authors_graph_trim, remove.multiple = T, remove.loops = T)
+V(authors_graph_trim)$clust <- membership(cluster_fast_greedy(authors_graph_trim2))
+```
+
+```{r}
+sig_trim_fr <- sigmaFromIgraph(authors_graph_trim, layout = kk_sub) #%>%
+  # addNodeSize(sizeVector = V(authors_graph_trim)$degree, maxSize = 8) %>% #sizeMetric = 'degree', maxSize = 8) %>%
+  #addNodeLabels(labelAttr = 'label') %>%
+  # addNodeColors(colorAttr = 'clust') %>% 
+  # addEdgeSize(sizeAttr = "degree", minSize = 0.1, maxSize = 2.5)
+sig_trim_fr
+```
+
+
+```{r}
+plot(authors_graph_trim,
+     vertex.color="green",
+     vertex.size=2, 
+     edge.arrow.size=0.1, 
+     vertex.label.cex=0.8, 
+     vertex.label="", 
+     layout = kk_sub)
+```
+
+
+
+
+
+
+
+```{r}
+
+# Input the name of a node and the function calculates several centrality measures of the 1.5 egocentric network
+ego_profile <- function(x, g){
+  ego_graph <- make_ego_graph(g, order=1, x, mindist = 0)[[1]]
+  ego_graph <- simplify(ego_graph, remove.loops = T, remove.multiple = T)
+  ego_density <- edge_density(ego_graph)
+  deg <- V(g)[x]$degree
+  ave_path <- average.path.length(ego_graph)
+  eigen <- eigen_centrality(ego_graph, directed = F)$value
+  btw <- mean(betweenness(ego_graph))
+  close <- mean(closeness(ego_graph, mode = 'all'))
+  return(c(ego_density, deg, ave_path, eigen, btw, close))
+}
+```
+
+```{r}
+ego_profile("Logan Mitchell", authors_graph)
+```
+
+```{r}
+x_nodes <- function(g, v1, v2) {
+  n.v1 <- neighbors(g, as.numeric(V(g)[v1]))
+  n.v2 <- neighbors(g, as.numeric(V(g)[v2]))
+  
+  x_v <- intersection(n.v1, n.v2)
+  
+  return(x_v)
+}
+```
+
+
+```{r}
+ego_graph1 <- make_ego_graph(authors_graph, order=1, "Logan Mitchell", mindist = 0)[[1]]
+```
+
+```{r}
+ego_graph1 <- simplify(ego_graph1, remove.loops = T, remove.multiple = T)
+V(ego_graph1)$clust <- membership(cluster_fast_greedy(ego_graph1))
+```
+
+```{r}
+authors_graph_trim2 <- simplify(authors_graph_trim, remove.multiple = T, remove.loops = T)
+V(authors_graph_trim)$clust <- membership(cluster_fast_greedy(authors_graph_trim2))
+```
+
+
+```{r}
+kk_ego1 <- layout_with_kk(ego_graph1)
+```
+
+```{r}
+sig_ego1 <- sigmaFromIgraph(ego_graph1, layout = kk_ego1) %>%
+  addNodeSize(sizeVector = V(ego_graph1)$degree, maxSize = 8) %>% 
+  #addNodeLabels(labelAttr = 'label') %>%
+  addNodeColors(colorAttr = 'clust') %>% 
+  addEdgeSize(oneSize = 0.1)
+sig_ego1
+```
+
+```{r}
+sigmaFromIgraph(ego_graph1, layout = kk_ego1) %>%
+  addNodeSize(sizeVector = V(ego_graph1)$degree, maxSize = 8) %>% 
+  #addNodeLabels(labelAttr = 'label') %>%
+  addNodeColors(colorAttr = 'clust') %>% 
+  addEdgeSize(oneSize = 0.1) %>% saveSigma("sigmaOut.html")
+
+```
