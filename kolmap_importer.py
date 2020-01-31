@@ -6,7 +6,7 @@ import itertools
 
 def var_extract(auth):
     '''
-    Take a Scholarly author object and extracts informatino about the author and their publications.
+    Take a Scholarly author object and extracts information about the author and their publications.
     '''
 
     # Collecting simple variables
@@ -29,10 +29,11 @@ def var_extract(auth):
     conn.commit()
 
     # Assigning the co-authors listed by the user on Google Scholar
+    # Omitted at the moment because this information should be extracted from the coauthor list automatically
 #     coauth_manual = [auth.coauthors[i].name for i in range(len(auth.coauthors))]
 
     # Extracts relevant information from each publication in an author's record
-    cl = [pub_extract(auth, i) for i in range(3)]#len(auth.publications))]
+    cl = [pub_extract(auth, i) for i in range(len(auth.publications))]
 
     # Unpack data from publication extraction into dataframe and upload to database
     [pub_unpacker(l, record_name) for l in cl]
@@ -40,15 +41,19 @@ def var_extract(auth):
 #     return pd.concat(testOut)
 
 def pub_unpacker(d, name):
+    '''
+    Creates a dataframe edgelist of the coauthors returned from the pub_extract function and adds other publication data to it. The dataframe is then posted to the edgelist database.
+    '''
 
     coauths, pub_title, pub_url, pub_journal = d
 
     coauths.append(name)
 
-    if len(coauths) >1:
+    if len(coauths) >1: # If the author is list length of 1, there are no coauthors
 
         pubEL = edgelister(coauths)
 
+        # Saving simple information for the publication
         pubEL["title"] = pub_title
         pubEL["url"] = pub_url
         pubEL["journal"] = pub_journal
@@ -67,6 +72,9 @@ def pub_unpacker(d, name):
         print("No coauthors found")
 
 def edgelister(simple_list):
+    '''
+    Inputs a list of authors in a publication and efficiently constructs undirected edgelist connecting all coauthors in that list
+    '''
 
     listSet1 = []
     for i in range(len(simple_list)-1):
@@ -78,6 +86,7 @@ def edgelister(simple_list):
         test2 = simple_list[i:]
         listSet2.append(test2)
 
+    # Flatten the nested lists
     listSet1_expanded = list(itertools.chain.from_iterable(listSet1))
     listSet2_expanded = list(itertools.chain.from_iterable(listSet2))
 
@@ -94,7 +103,7 @@ def pub_extract(auth, i):
     '''
 
     try:
-        pubStub = auth.publications[i].fill()
+        pubStub = auth.publications[i].fill() # Expands out the publication data for the author object
         coauths = pubStub.bib["author"].split(" and ") # Make list from coauthor string
         coauths = [ca.strip() for ca in coauths] # Remove leading and trailing whitespace
 
@@ -103,6 +112,7 @@ def pub_extract(auth, i):
         [print(ca) for ca in coauths] # Print the list of names extracted
         print("\n")
 
+        # Extract the information for title, url, and journal
         pub_title = pubStub.bib["title"]
         pub_url = pubStub.bib["url"]
         pub_journal = pubStub.bib["journal"]
@@ -118,7 +128,7 @@ def generator_db(gen):
     for each author.
     '''
 
-    conn = sqlite3.connect('./kolDB.db')
+    conn = sqlite3.connect('./kolDB.db') # Connect to the database
 #     c = conn.cursor()
 
 
@@ -133,10 +143,12 @@ def generator_db(gen):
 
 keysearch = input("Enter keyword for network map: ")
 
-conn = sqlite3.connect('./kolDB.db')
+conn = sqlite3.connect('./kolDB.db') # Connect to the database
 
-c = conn.cursor()
+c = conn.cursor() # Create database cursor
 
+# Creates a Scholarly generator object comprised of individual Author objects
 cb_search = scholarly.search_keyword(keysearch) #("air_quality")
 
+# Iterate through the generator and extract information from each author
 generator_db(cb_search)
