@@ -1,0 +1,173 @@
+---
+title: "R Notebook"
+output: html_notebook
+author: "Ryan Willett"
+---
+
+```{r, echo=FALSE, warning=F}
+library(tidyverse)
+library(ggplot2)
+library(igraph)
+library(sigmaNet)
+library(scales)
+library(RSQLite)
+library(DBI)
+
+
+```
+
+```{r}
+con <- dbConnect(RSQLite::SQLite(), "kolDB.db")
+
+dbListTables(con)
+```
+
+```{r}
+metricsDF <- dbGetQuery(con, "SELECT * FROM metrics;")
+el_df <- dbGetQuery(con, "SELECT author1,author2 FROM  edgelist_clean;")
+```
+
+
+```{r}
+el_df <- read.csv("airqualEL.csv")
+```
+
+
+
+```{r}
+authors_graph <- graph_from_data_frame(el_df, directed=F)
+```
+
+```{r}
+V(authors_graph)$degree <- degree(authors_graph)
+```
+
+```{r}
+degree(authors_graph) %>% sort(decreasing = T) %>% head(20)
+```
+
+The degree distribution is a classic scale-free network
+```{r}
+degDF <- data.frame(name = V(authors_graph)$name, degree = V(authors_graph)$degree)
+
+ggplot(degDF, aes(degree)) + geom_histogram(binwidth = 19) + 
+  labs(x="Degree Frequency", y="Number of Coauthors", title="Degree Distribution of Coauthorship in the Air Quality Field") + 
+  theme_classic()
+
+
+ggplot(degDF, aes(degree)) + geom_freqpoly(binwidth = 19, fill="black") + xlim(0,500) + 
+  labs(x="Degree Frequency", y="Number of Coauthors", title="Degree Distribution of Coauthorship in the Air Quality Field (Zoom)") + 
+  theme_classic()
+```
+
+
+################# WORKING WITH A SUBGRAPH OF MORE HIGHLY CONNECTED AUTHORS ##################################
+
+Paring down the network to the highly connected subgraph (those with > 500 coauthors)
+```{r}
+authors_graph_trim <- delete_vertices(authors_graph, V(authors_graph)[degree<500])
+```
+
+Calculates the graph layout for the subgraph (This one is Kamada-Kawaii)
+```{r}
+# fr_sub <- layout_with_fr(authors_graph_trim)
+kk_sub <- layout_with_kk(authors_graph_trim)
+```
+
+Simplifies the graph and runs a quick clustering algorithm on the subgraph (prunes edges to self)
+```{r}
+authors_graph_trim2 <- simplify(authors_graph_trim, remove.multiple = T, remove.loops = T)
+V(authors_graph_trim)$clust <- membership(cluster_fast_greedy(authors_graph_trim2))
+```
+
+This would be how you plot this network, but for this current example network, it takes a long time to plot (too many nodes)
+```{r}
+# sig_trim_kk <- sigmaFromIgraph(authors_graph_trim, layout = kk_sub) #%>%
+#   addNodeSize(sizeVector = V(authors_graph_trim)$degree, maxSize = 8) %>% #sizeMetric = 'degree', maxSize = 8) %>%
+#   addNodeLabels(labelAttr = 'label') %>%
+#   addNodeColors(colorAttr = 'clust') %>%
+#   addEdgeSize(sizeAttr = "degree", minSize = 0.1, maxSize = 2.5)
+# sig_trim_kk
+```
+
+
+
+
+
+
+
+```{r}
+
+# Input the name of a node and the function calculates several centrality measures of the 1.5 egocentric network
+ego_profile <- function(x, g){
+  ego_graph <- make_ego_graph(g, order=1, x, mindist = 0)[[1]] # Takes the subgraph of the target node to an order of 1
+  ego_graph <- simplify(ego_graph, remove.loops = T, remove.multiple = T)
+  ego_density <- edge_density(ego_graph) # Calculates the density of the subgraph
+  deg <- V(g)[x]$degree # Assigns the degree value for the target "ego" node
+  ave_path <- average.path.length(ego_graph) # Calculates average path within the subgraph
+  eigen <- eigen_centrality(ego_graph, directed = F)$value # Calculates eigenvector centrality
+  btw <- mean(betweenness(ego_graph))
+  close <- mean(closeness(ego_graph, mode = 'all'))
+  
+  centralities <- c(ego_density, deg, ave_path, eigen, btw, close)
+  
+  names(centralities) <- c("ego_density", 'degree', 'ave_pathlength', 'eigenvector_cent', 'betweenness', 'closeness')
+  
+  return(centralities)
+}
+
+x_nodes <- function(g, v1, v2) {
+  # Input a graph and 2 nodes and it will return a list of nodes that are shared neighbors
+  n.v1 <- neighbors(g, as.numeric(V(g)[v1]))
+  n.v2 <- neighbors(g, as.numeric(V(g)[v2]))
+  
+  x_v <- intersection(n.v1, n.v2)
+  
+  return(x_v)
+}
+
+```
+
+This outputs a variety of centrality measures of the 1.5 ego network subgraph for the target node.
+```{r}
+ego_profile("L Mitchell", authors_graph)
+```
+
+```{r}
+inspect_ego <- function(node_name){
+  # prof <- ego_profile(node_name, authors_graph)
+  print("Extracting subgraph")
+  
+  ego_graph <- make_ego_graph(authors_graph, order=1, node_name, mindist = 0)[[1]]
+  
+  ego_graph <- simplify(ego_graph, remove.loops = T, remove.multiple = T)
+  V(ego_graph)$clust <- membership(cluster_fast_greedy(ego_graph))
+  
+  print("Calculating graph layout")
+  
+  kk_ego <- layout_with_kk(ego_graph)
+  
+  sig_ego <- sigmaFromIgraph(ego_graph, layout = kk_ego) %>%
+  addNodeSize(sizeVector = V(ego_graph)$degree, maxSize = 8) %>% 
+  #addNodeLabels(labelAttr = 'label') %>%
+  addNodeColors(colorAttr = 'clust') %>% 
+  addEdgeSize(oneSize = 0.1)
+  return(sig_ego)
+}
+
+ego_export <- function(node_name, fileOut){
+  signet_obj <- inspect_ego(node_name)
+  signet_obj %>% saveSigma(fileOut)
+}
+```
+
+This provides the plot of the 1.5 ego network graph 
+```{r}
+inspect_ego("L Mitchell")
+```
+
+This saves the 1.5 egonetwork of the input node name
+```{r}
+ego_export("L Mitchell", "lmitchell.html")
+```
+
